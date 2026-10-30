@@ -209,7 +209,7 @@
             <h3 id="cardNetSavings" class="text-2xl font-extrabold text-slate-900 mt-1">$0.00</h3>
           </div>
           <div class="mt-3 flex items-center justify-between text-xs">
-            <span class="text-slate-500">Income vs Spend</span>
+            <span id="cardNetSub" class="text-slate-500">Income vs Living Costs</span>
             <span id="cardNetStatus" class="font-semibold text-emerald-600">Surplus</span>
           </div>
         </div>
@@ -289,8 +289,11 @@
               <span class="inline-flex items-center text-[11px] text-slate-500 mr-2">
                 <span class="w-2.5 h-2.5 rounded-xs bg-emerald-500 mr-1"></span>Income
               </span>
-              <span class="inline-flex items-center text-[11px] text-slate-500">
+              <span class="inline-flex items-center text-[11px] text-slate-500 mr-2">
                 <span class="w-2.5 h-2.5 rounded-xs bg-rose-500 mr-1"></span>Expense
+              </span>
+              <span class="inline-flex items-center text-[11px] text-slate-500">
+                <span class="w-2.5 h-2.5 rounded-xs bg-teal-600 mr-1"></span>Savings
               </span>
             </div>
           </div>
@@ -503,9 +506,10 @@
           <!-- Type filter -->
           <div>
             <select id="txTypeFilter" class="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-emerald-500 text-slate-800">
-              <option value="ALL">All Types (Income & Expenses)</option>
+              <option value="ALL">All Types (Income, Expense, Savings)</option>
               <option value="Expense">Expenses Only</option>
               <option value="Income">Income Only</option>
+              <option value="Savings">Savings Only</option>
             </select>
           </div>
 
@@ -781,6 +785,7 @@
             <select id="txFormType" class="w-full px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-emerald-500 text-slate-800">
               <option value="Expense">Expense</option>
               <option value="Income">Income</option>
+              <option value="Savings">Savings</option>
             </select>
           </div>
           <div>
@@ -886,7 +891,7 @@
 2026-10-22,Clothing & Footwear,Shopping,Expense,110.00,Autumn apparel
 2026-10-24,Streaming Services,Dining & Entertainment,Expense,32.00,Netflix & Spotify
 2026-10-25,Pharmacy & Prescriptions,Healthcare,Expense,42.50,Vitamins and meds
-2026-10-26,Emergency Fund Contribution,Savings & Investments,Expense,500.00,High-yield savings
+2026-10-26,Emergency Fund Contribution,Savings & Investments,Savings,500.00,High-yield savings
 2026-10-27,Student Loan Payment,Debt Repayment,Expense,250.00,Principal & interest
 2026-10-28,Weekend Grocery Restock,Groceries,Expense,95.60,Pantry staples`;
 
@@ -1048,16 +1053,19 @@
           // Clean amount: remove currency symbols and commas
           const cleanedAmount = parseFloat(String(rawAmount).replace(/[^0-9.-]+/g, '')) || 0;
 
-          // Infer type if missing or ambiguous
+          // Infer type: checks for Savings, Income, and Expense
           let finalType = 'Expense';
           const typeLower = rawType.toLowerCase();
           const catLower = rawCat.toLowerCase();
-          if (typeLower.includes('income') || typeLower.includes('credit') || typeLower.includes('salary') || typeLower.includes('deposit')) {
+          if (typeLower.includes('sav') || typeLower.includes('invest') || typeLower.includes('transfer') || typeLower.includes('emergency')) {
+            finalType = 'Savings';
+          } else if (typeLower.includes('income') || typeLower.includes('credit') || typeLower.includes('salary') || typeLower.includes('deposit')) {
             finalType = 'Income';
           } else if (catLower.includes('salary') || catLower.includes('freelance') || catLower.includes('bonus') || catLower.includes('dividend') || catLower.includes('interest')) {
             finalType = 'Income';
+          } else if (catLower.includes('sav') || catLower.includes('invest')) {
+            finalType = 'Savings';
           } else if (cleanedAmount < 0) {
-            // Negative could mean expense or adjustment
             finalType = 'Expense';
           }
 
@@ -1130,24 +1138,30 @@
 
         let totalIncome = 0;
         let totalExpenses = 0;
+        let totalSavings = 0;
         let incomeCount = 0;
         let expenseCount = 0;
+        let savingsCount = 0;
 
         const categoryExpenses = {};
-        const monthlyTimeline = {}; // { 'YYYY-MM': { income: 0, expense: 0 } }
+        const monthlyTimeline = {}; // { 'YYYY-MM': { income: 0, expense: 0, savings: 0 } }
 
         txList.forEach(tx => {
           const amt = Number(tx.amount) || 0;
           const monthKey = tx.date ? tx.date.slice(0, 7) : 'Unknown';
 
           if (!monthlyTimeline[monthKey]) {
-            monthlyTimeline[monthKey] = { income: 0, expense: 0 };
+            monthlyTimeline[monthKey] = { income: 0, expense: 0, savings: 0 };
           }
 
           if (tx.type === 'Income') {
             totalIncome += amt;
             incomeCount++;
             monthlyTimeline[monthKey].income += amt;
+          } else if (tx.type === 'Savings') {
+            totalSavings += amt;
+            savingsCount++;
+            monthlyTimeline[monthKey].savings += amt;
           } else {
             totalExpenses += amt;
             expenseCount++;
@@ -1157,7 +1171,7 @@
         });
 
         const netSavings = totalIncome - totalExpenses;
-        const savingsRate = totalIncome > 0 ? Math.round((netSavings / totalIncome) * 100) : 0;
+        const savingsRate = totalIncome > 0 ? Math.max(0, Math.round((netSavings / totalIncome) * 100)) : 0;
 
         // 50/30/20 Rule categorization
         // Needs: Housing, Groceries, Utilities, Healthcare, Transportation
@@ -1204,10 +1218,12 @@
         return {
           totalIncome,
           totalExpenses,
+          totalSavings,
           netSavings,
           savingsRate,
           incomeCount,
           expenseCount,
+          savingsCount,
           categoryExpenses,
           monthlyTimeline,
           needsSpend,
@@ -1518,6 +1534,7 @@
 
         const incomeData = months.map(m => timeline[m].income);
         const expenseData = months.map(m => timeline[m].expense);
+        const savingsData = months.map(m => timeline[m].savings || 0);
 
         if (state.charts.trend) {
           state.charts.trend.destroy();
@@ -1538,6 +1555,12 @@
                 label: 'Expenses',
                 data: expenseData,
                 backgroundColor: '#f43f5e',
+                borderRadius: 6
+              },
+              {
+                label: 'Savings',
+                data: savingsData,
+                backgroundColor: '#0d9488',
                 borderRadius: 6
               }
             ]
@@ -1789,13 +1812,23 @@
           const tr = document.createElement('tr');
           tr.className = 'hover:bg-slate-50/80 transition-colors';
 
-          const isIncome = tx.type === 'Income';
-          const typeBadge = isIncome
-            ? '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800"><i class="fa-solid fa-arrow-down mr-1"></i>Income</span>'
-            : '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800"><i class="fa-solid fa-arrow-up mr-1"></i>Expense</span>';
+          let typeBadge = '';
+          let amountFormatted = '';
+          let amountClass = '';
 
-          const amountFormatted = (isIncome ? '+' : '-') + formatMoney(tx.amount);
-          const amountClass = isIncome ? 'text-emerald-600 font-bold' : 'text-slate-900 font-bold';
+          if (tx.type === 'Income') {
+            typeBadge = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800"><i class="fa-solid fa-arrow-down mr-1"></i>Income</span>';
+            amountFormatted = '+' + formatMoney(tx.amount);
+            amountClass = 'text-emerald-600 font-bold';
+          } else if (tx.type === 'Savings') {
+            typeBadge = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800"><i class="fa-solid fa-piggy-bank mr-1"></i>Savings</span>';
+            amountFormatted = '★ ' + formatMoney(tx.amount);
+            amountClass = 'text-teal-700 font-bold';
+          } else {
+            typeBadge = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800"><i class="fa-solid fa-arrow-up mr-1"></i>Expense</span>';
+            amountFormatted = '-' + formatMoney(tx.amount);
+            amountClass = 'text-slate-900 font-bold';
+          }
 
           tr.innerHTML = 
             '<td class="py-3 px-4 font-medium text-slate-500 whitespace-nowrap">' + formatDate(tx.date) + '</td>' +
